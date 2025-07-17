@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>高级WebSocket聊天系统</title>
+    <style>
+        /* 保持原有样式不变 */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chat-box {
+            border: 1px solid #ccc;
+            height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .system-message {
+            background-color: #f0f0f0;
+            color: #666;
+        }
+        .public-message {
+            background-color: #e3f2fd;
+        }
+        .private-message {
+            background-color: #fff3e0;
+        }
+        .private-sent-message {
+            background-color: #e8f5e9;
+        }
+        .user-list {
+            float: right;
+            width: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+        #message-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0b7dda;
+        }
+        #recipient-select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket 多人聊天</h1>
+        <div class="user-list">
+            <h3>在线用户</h3>
+            <ul id="user-list"></ul>
+        </div>
+        <div class="chat-box" id="chat-box"></div>
+        <div class="input-area">
+            <select id="recipient-select">
+                <option value="public">所有人</option>
+            </select>
+            <input type="text" id="message-input" placeholder="输入消息...">
+            <button onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        const username = prompt("请输入您的用户名：");
+        if (!username) {
+            alert("用户名不能为空！");
+            window.location.reload();
+        }
+
+        const ws = new WebSocket(`ws://${window.location.host}/ws/${username}`);
+        const chatBox = document.getElementById('chat-box');
+        const userList = document.getElementById('user-list');
+        const messageInput = document.getElementById('message-input');
+        const recipientSelect = document.getElementById('recipient-select');
+
+        // 处理收到的消息
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            switch(data.type) {
+                case 'system':
+                    appendSystemMessage(data);
+                    break;
+                case 'public':
+                    appendPublicMessage(data);
+                    break;
+                case 'private':
+                    appendPrivateMessage(data);
+                    break;
+                case 'private_sent':
+                    appendPrivateSentMessage(data);
+                    break;
+                case 'user_list':
+                    updateUserList(data);
+                    break;
+                case 'error':
+                    appendErrorMessage(data);
+                    break;
+            }
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        };
+
+        // 辅助函数：添加不同类型的消息到聊天框
+        function appendSystemMessage(data) {
+            const msg = document.createElement('div');
+            msg.className = 'message system-message';
+            msg.innerHTML = `<strong>[${data.time}] 系统通知：</strong>${data.message}`;
+            chatBox.appendChild(msg);
+        }
+
+        function appendPublicMessage(data) {
+            const msg = document.createElement('div');
+            msg.className = 'message public-message';
+            msg.innerHTML = `<strong>[${data.time}] ${data.username}：</strong>${data.message}`;
+            chatBox.appendChild(msg);
+        }
+
+        function appendPrivateMessage(data) {
+            const msg = document.createElement('div');
+            msg.className = 'message private-message';
+            msg.innerHTML = `<strong>[${data.time}] 私聊 (${data.sender})：</strong>${data.message}`;
+            chatBox.appendChild(msg);
+        }
+
+        function appendPrivateSentMessage(data) {
+            const msg = document.createElement('div');
+            msg.className = 'message private-sent-message';
+            msg.innerHTML = `<strong>[${data.time}] 已发送给 ${data.recipient}：</strong>${data.message}`;
+            chatBox.appendChild(msg);
+        }
+
+        function appendErrorMessage(data) {
+            const msg = document.createElement('div');
+            msg.className = 'message system-message';
+            msg.innerHTML = `<strong>[${data.time}] 错误：</strong>${data.message}`;
+            chatBox.appendChild(msg);
+        }
+
+        // 更新用户列表和接收者选择器
+        function updateUserList(data) {
+            userList.innerHTML = '';
+            recipientSelect.innerHTML = '<option value="public">所有人</option>';
+            
+            data.users.forEach(user => {
+                if (user !== username) {  // 不显示自己
+                    const li = document.createElement('li');
+                    li.textContent = user;
+                    userList.appendChild(li);
+                    
+                    const option = document.createElement('option');
+                    option.value = user;
+                    option.textContent = user;
+                    recipientSelect.appendChild(option);
+                }
+            });
+        }
+
+        // 发送消息
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            const recipient = recipientSelect.value;
+            const msgData = {
+                message: message,
+                time: new Date().toLocaleTimeString()
+            };
+            
+            if (recipient === "public") {
+                // 发送群聊消息
+                msgData.type = "public";
+            } else {
+                // 发送私聊消息
+                msgData.type = "private";
+                msgData.to = recipient;
+            }
+            
+            ws.send(JSON.stringify(msgData));
+            messageInput.value = '';
+        }
+
+        // 回车发送消息
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // 连接状态处理
+        ws.onclose = function() {
+            alert('与服务器的连接已断开！');
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket错误：', error);
+        };
+    </script>
+</body>
+</html>
